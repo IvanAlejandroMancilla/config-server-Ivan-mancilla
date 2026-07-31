@@ -8,5 +8,6 @@ spring:
     config:
       server:
         git:
-          uri: https://github.com/ivanmancilla/tp-config-repo
+          uri: https://github.com/IvanAlejandroMancilla/tp-config-repo-IVANMANCILLA
           default-label: main
+

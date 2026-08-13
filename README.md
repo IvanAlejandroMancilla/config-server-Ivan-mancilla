@@ -61,7 +61,7 @@ Debe ser el **primer** servicio en levantarse, ya que el resto depende de él pa
 
 ```bash
 cd config-server
-./mvnw spring-boot:run
+mvn spring-boot:run
 ```
 
 Esperá a que el log confirme la conexión exitosa con el repositorio Git antes de iniciar los demás servicios.

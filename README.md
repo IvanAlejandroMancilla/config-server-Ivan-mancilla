@@ -1,14 +1,16 @@
-# customer-service
+# config-server
 
-Microservicio de gestión de clientes construido con **Spring Boot 3** y **Java 21**. Forma parte de una arquitectura de microservicios: se registra en **Eureka**, obtiene su configuración desde un **Config Server** y se comunica con `product-service` mediante **OpenFeign** para enriquecer la información de cada cliente con sus productos asociados.
+Servidor de configuración centralizada construido con **Spring Boot 3** y **Java 21**, basado en **Spring Cloud Config Server**. Es el primer componente que debe iniciarse en el ecosistema: expone la configuración (`application.yml`, `customer-service.yml`, `product-service.yml`, etc.) que los demás microservicios (`eureka-server`, `customer-service`, `product-service`) leen al arrancar.
 
-## ✨ Funcionalidades
+## ✨ ¿Qué hace?
 
-- CRUD completo de clientes (crear, listar, obtener por ID, actualizar, eliminar).
-- Validación de documento único: evita registrar clientes duplicados.
-- Consulta de un cliente junto con sus productos, obtenidos en tiempo real desde `product-service`.
-- Manejo centralizado de errores con respuestas JSON consistentes (`404`, `409`, `503`, `500`).
-- Datos de prueba precargados al iniciar la aplicación.
+En lugar de que cada microservicio guarde su propio `application.yml` con datos como el puerto, la URL de Eureka o parámetros de negocio, todos esos archivos se guardan en un **repositorio Git remoto** separado. El `config-server`:
+
+1. Al arrancar, se conecta a ese repositorio Git remoto.
+2. Expone esa configuración vía HTTP (por ejemplo `GET /product-service/default`).
+3. Los demás servicios, al iniciar, le piden su configuración a este servidor en lugar de leerla de un archivo local.
+
+Esto permite cambiar la configuración de todo el ecosistema (puertos, URLs, feature flags, etc.) desde un único repositorio, sin tener que recompilar ni redistribuir cada microservicio.
 
 ## 🧱 Stack técnico
 
@@ -16,154 +18,66 @@ Microservicio de gestión de clientes construido con **Spring Boot 3** y **Java 
 |---|---|
 | Java 21 | Lenguaje |
 | Spring Boot 3.3.2 | Framework base |
-| Spring Web (MVC) | API REST |
-| Spring Data JPA | Persistencia |
-| H2 Database | Base de datos en memoria |
-| Spring Cloud Netflix Eureka Client | Descubrimiento de servicios |
-| Spring Cloud Config | Configuración centralizada |
-| Spring Cloud OpenFeign | Comunicación con `product-service` |
+| Spring Cloud Config Server | Servidor de configuración centralizada |
+| Spring Web (MVC) | Expone los endpoints HTTP del servidor de config |
 | Maven | Gestión de dependencias y build |
 
 ## 📁 Estructura del proyecto
 
 ```
-src/main/java/com/ivanmancilla/customerservice
-├── CustomerServiceApplication.java   # Clase principal (@SpringBootApplication, @EnableFeignClients)
-├── client/
-│   └── ProductClient.java            # Cliente Feign hacia product-service
-├── config/
-│   └── CustomerDataInitializer.java  # Carga de datos iniciales (clientes de prueba)
-├── controller/
-│   └── CustomerController.java       # Endpoints REST (/clientes)
-├── dto/
-│   ├── CustomerRequestDTO.java
-│   ├── CustomerResponseDTO.java
-│   └── ProductDTO.java
-├── entity/
-│   └── Customer.java                 # Entidad JPA (tabla customers)
-├── exception/
-│   ├── CustomerNotFoundException.java
-│   ├── DuplicateCustomerException.java
-│   ├── ErrorResponse.java
-│   └── GlobalExceptionHandler.java   # Manejo global de excepciones
-├── mapper/
-│   ├── CustomerMapper.java
-│   └── GenericMapper.java
-├── repository/
-│   └── CustomerRepository.java
-└── service/
-    └── CustomerService.java
+src/main/java/com/ivanmancilla/configserver
+└── ConfigServerApplication.java   # Clase principal (@SpringBootApplication, @EnableConfigServer)
+
+src/main/resources
+└── application.yml                # Puerto propio y URL del repo Git de configuración
 ```
 
-## ⚙️ Requisitos previos
+La anotación `@EnableConfigServer` es la que activa toda la funcionalidad de Spring Cloud Config: no hay controllers ni lógica propia, el comportamiento lo aporta la dependencia `spring-cloud-config-server`.
 
-- JDK 21+
-- Maven 3.9+
-- (Recomendado, para funcionamiento completo del ecosistema)
-  - Un **Config Server** corriendo en `http://localhost:8888`
-  - Un **Eureka Server** para el registro del servicio
-  - El microservicio `product-service` registrado en Eureka, para que funcione el endpoint de productos por cliente
-
-> El servicio puede levantarse sin el Config Server, Eureka o `product-service`, pero fallará al iniciar si no puede resolver `configserver:http://localhost:8888`, y el endpoint `/clientes/{id}/productos` devolverá la lista de productos vacía si no logra comunicarse con `product-service`.
-
-## 🚀 Cómo ejecutar
-
-```bash
-# Clonar el repositorio
-git clone https://github.com/IvanAlejandroMancilla/customer-service-Ivan-mancilla.git
-cd customer-service-Ivan-mancilla
-
-# Compilar y ejecutar
-mvn spring-boot:run
-```
-
-También puede empaquetarse y ejecutarse como JAR:
-
-```bash
-mvn clean package
-java -jar target/customer-service-0.0.1-SNAPSHOT.jar
-```
-
-La configuración de la aplicación (`application.yml`) importa propiedades adicionales desde el Config Server:
+## ⚙️ Configuración (`application.yml`)
 
 ```yaml
+server:
+  port: 8888
+
 spring:
   application:
-    name: customer-service
-  config:
-    import: "configserver:http://localhost:8888"
+    name: config-server
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/IvanAlejandroMancilla/tp-config-repo-IVANMANCILLA
+          default-label: main
 ```
 
-## 📡 Endpoints
+- **`server.port`**: puerto en el que corre el servidor (`8888`).
+- **`spring.cloud.config.server.git.uri`**: repositorio Git remoto donde viven los archivos de configuración de cada microservicio.
+- **`default-label`**: rama del repositorio que se usa por defecto (`main`).
 
-Base path: `/clientes`
+## ▶️ Cómo ejecutarlo
 
-| Método | Endpoint | Descripción |
-|---|---|---|
-| `POST` | `/clientes` | Crea un nuevo cliente |
-| `GET` | `/clientes` | Lista todos los clientes |
-| `GET` | `/clientes/{id}` | Obtiene un cliente por ID |
-| `GET` | `/clientes/{id}/productos` | Obtiene un cliente junto a sus productos (vía `product-service`) |
-| `PUT` | `/clientes/{id}` | Actualiza un cliente existente |
-| `DELETE` | `/clientes/{id}` | Elimina un cliente |
-
-### Ejemplo — Crear cliente
+Debe ser el **primer** servicio en levantarse, ya que el resto depende de él para obtener su configuración.
 
 ```bash
-curl -X POST http://localhost:8081/clientes \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nombre": "Ivan Mancilla",
-    "documento": "12345678",
-    "email": "ivan@example.com",
-    "saldo": 500000.00
-  }'
+cd config-server
+./mvnw spring-boot:run
 ```
 
-### Ejemplo — Obtener cliente con productos
+Esperá a que el log confirme la conexión exitosa con el repositorio Git antes de iniciar los demás servicios.
+
+## 🔍 Cómo probarlo
+
+Con el servidor corriendo, se puede consultar la configuración de cualquier microservicio directamente por HTTP, siguiendo el patrón `/{nombre-de-la-app}/{profile}`:
 
 ```bash
-curl http://localhost:8081/clientes/1/productos
+curl http://localhost:8888/product-service/default
+curl http://localhost:8888/customer-service/default
+curl http://localhost:8888/eureka-server/default
 ```
 
-## 🧩 Modelo de datos
+Si la respuesta trae el contenido del `.yml` correspondiente en formato JSON, el config-server está funcionando correctamente.
 
-**Customer (entidad, tabla `customers`)**
+## 🔗 Relación con el resto del ecosistema
 
-| Campo | Tipo | Restricciones |
-|---|---|---|
-| `id` | Long | PK, autogenerado |
-| `nombre` | String | Requerido |
-| `documento` | String | Requerido, único |
-| `email` | String | Requerido |
-| `saldo` | BigDecimal | — |
-
-**ProductDTO** (recibido desde `product-service` vía Feign, se embebe en `CustomerResponseDTO.productos`)
-
-| Campo | Tipo |
-|---|---|
-| `id` | Long |
-| `clienteId` | Long |
-| `tipo` | String |
-| `nombre` | String |
-| `descripcion` | String |
-| `montoAsociado` | BigDecimal |
-| `tasaInteres` | BigDecimal |
-| `activo` | boolean |
-| `fechaInicio` | LocalDate |
-| `fechaVencimiento` | LocalDate |
-
-## ⚠️ Manejo de errores
-
-El `GlobalExceptionHandler` centraliza las respuestas de error con un formato consistente (`timestamp`, `status`, `error`, `message`, `path`):
-
-| Excepción | Código HTTP |
-|---|---|
-| `CustomerNotFoundException` | 404 Not Found |
-| `DuplicateCustomerException` | 409 Conflict |
-| `FeignException` (fallo al comunicarse con `product-service`) | 503 Service Unavailable |
-| Excepción genérica | 500 Internal Server Error |
-
-## 👤 Autor
-
-**Ivan Alejandro Mancilla**
+Ver el diagrama y la guía de arranque completa en el [README principal](../README.md) del repositorio.
